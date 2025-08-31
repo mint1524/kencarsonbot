@@ -4,7 +4,9 @@ def shop_list_kb(page: int, has_prev: bool, has_next: bool):
     row = []
     if has_prev: row.append(InlineKeyboardButton(text="◀", callback_data=f"user:shop:list:{page-1}"))
     if has_next: row.append(InlineKeyboardButton(text="▶", callback_data=f"user:shop:list:{page+1}"))
-    return InlineKeyboardMarkup(inline_keyboard=[row] if row else [[InlineKeyboardButton(text="↻", callback_data=f"user:shop:list:{page}")]])
+    rows = [row] if row else [[InlineKeyboardButton(text="↻", callback_data=f"user:shop:list:{page}")]]
+    rows.append([InlineKeyboardButton(text="🔙 В меню", callback_data="menu:main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def variant_buy_kb(variant_id: int, can_ready: bool, can_key: bool):
     rows = []
@@ -13,4 +15,5 @@ def variant_buy_kb(variant_id: int, can_ready: bool, can_key: bool):
     if can_ready: rows.append([InlineKeyboardButton(text="Купить: Готовая (RUB)", callback_data=f"user:buy_tg:ready:{variant_id}")])
     if can_key:   rows.append([InlineKeyboardButton(text="Купить: Под ключ (RUB)", callback_data=f"user:buy_tg:key:{variant_id}")])
     rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="user:shop:list:0")])
+    rows.append([InlineKeyboardButton(text="🔙 В меню", callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

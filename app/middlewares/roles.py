@@ -1,25 +1,42 @@
+from typing import Callable, Awaitable, Dict, Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
-from typing import Callable, Awaitable, Dict, Any
+from app.repositories.roles import RolesRepo
+from functools import wraps
 
 class RoleMiddleware(BaseMiddleware):
-    def __init__(self, roles_repo):
-        self.roles_repo = roles_repo
+    def __init__(self, sessionmaker):
+        self.Session = sessionmaker
 
-    async def __call__(self, handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-                       event: TelegramObject, data: Dict[str, Any]):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ):
+        roles = {"user"}  # дефолт
         user = data.get("event_from_user")
         if user:
-            data["roles"] = await self.roles_repo.get_user_roles(user.id)  # set[str]
+            async with self.Session() as s:
+                db_roles = await RolesRepo(s).get_user_roles(user.id)
+            if db_roles:
+                roles = set(db_roles)
+        data["roles"] = roles
         return await handler(event, data)
 
 def requires(*need: str):
+    need = set(need)
+
     def deco(func):
-        async def wrapper(event, data):
-            roles: set[str] = set(data.get("roles", []))
-            if not set(need).issubset(roles):
-                await data["bot"].send_message(data["event_from_user"].id, "Недостаточно прав.")
+        @wraps(func)
+        async def wrapper(event: TelegramObject, **data):
+            roles = set(data.get("roles", []))
+            if not need.issubset(roles):
+                bot = data.get("bot")
+                user = data.get("event_from_user") or getattr(event, "from_user", None)
+                if bot and user:
+                    await bot.send_message(user.id, "Недостаточно прав.")
                 return
-            return await func(event, data)
+            return await func(event, **data)
         return wrapper
     return deco
