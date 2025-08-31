@@ -14,3 +14,6 @@ venv/
 # local config
 .env
 
+.DS_Store
+app/.DS_Store
+app/repositories/.DS_Store
