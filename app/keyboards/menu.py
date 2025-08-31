@@ -2,7 +2,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu(roles: set[str]) -> InlineKeyboardMarkup:
     buttons = []
-    # Базовые (user)
     buttons += [
         [InlineKeyboardButton(text="🛍 Купить работу", callback_data="user:shop")],
         [InlineKeyboardButton(text="📦 Мои покупки", callback_data="user:orders")],
