@@ -1,0 +1,185 @@
+from aiogram import Router, F
+from app.middlewares.roles import requires
+from app.db import Session
+from app.repositories.roles import RolesRepo
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+from app.repositories.works import WorksRepo
+from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
+
+router = Router(name="admin")
+
+@router.callback_query(F.data.startswith("adm:mk_redactor"))
+@requires("admin")
+async def make_redactor(cb: CallbackQuery, roles: set[str]):
+    # ожидаем, что в data будет adm:mk_redactor:<tg_id>
+    _,_,uid = cb.data.split(":")
+    async with Session() as s:
+        await RolesRepo(s).grant_role(int(uid), "redactor")
+    await cb.answer("Пользователь повышен до редактора", show_alert=True)
+
+@router.callback_query(F.data=="adm:fin:withdrawals")
+@requires("admin")
+async def list_withdrawals(cb: CallbackQuery):
+    async with Session() as s:
+        rows = (await s.execute(text("""
+          select id, user_id, amount, method, status, created_at
+          from withdrawals where status in ('requested','approved')
+          order by created_at asc limit 20
+        """))).all()
+    if not rows:
+        await cb.message.edit_text("Заявок нет.")
+        return await cb.answer()
+    lines = []
+    for r in rows:
+        lines.append(f"{r.id} | {r.user_id} | {r.amount} | {r.method} | {r.status}")
+    text_out = "Заявки на вывод:\n" + "\n".join(lines) + \
+               "\n\n/approve <id> — одобрить\n/paid <id> — отметить выплаченной\n/reject <id> — отклонить"
+    await cb.message.edit_text(text_out); await cb.answer()
+
+from aiogram.types import Message
+
+@router.message(F.text.startswith("/approve"))
+@requires("admin")
+async def wdr_approve(msg: Message):
+    wid = msg.text.split()[1]
+    async with Session() as s:
+        await s.execute(text("""
+          update withdrawals set status='approved', updated_at=now(), processed_by=:a where id=:id
+        """), {"a": msg.from_user.id, "id": wid})
+        await s.commit()
+    await msg.answer("Одобрено. Выплатите и отметьте /paid <id>.")
+
+@router.message(F.text.startswith("/paid"))
+@requires("admin")
+async def wdr_paid(msg: Message):
+    wid = msg.text.split()[1]
+    async with Session() as s:
+        # списываем баланс и закрываем заявку
+        row = (await s.execute(text("select user_id, amount from withdrawals where id=:id"), {"id": wid})).first()
+        if not row:
+            return await msg.answer("Не найдена заявка.")
+        await s.execute(text("update users set balance=balance-:a where tg_id=:u"),
+                        {"a": float(row.amount), "u": int(row.user_id)})
+        await s.execute(text("""
+          update withdrawals set status='paid', updated_at=now(), processed_by=:a where id=:id
+        """), {"a": msg.from_user.id, "id": wid})
+        await s.commit()
+    await msg.answer("Заявка закрыта как выплаченная.")
+
+@router.message(F.text.startswith("/reject"))
+@requires("admin")
+async def wdr_reject(msg: Message):
+    wid = msg.text.split()[1]
+    async with Session() as s:
+        await s.execute(text("""
+          update withdrawals set status='rejected', updated_at=now(), processed_by=:a where id=:id
+        """), {"a": msg.from_user.id, "id": wid})
+        await s.commit()
+    await msg.answer("Заявка отклонена.")
+
+router = Router(name="admin_mod")
+
+@router.callback_query(F.data=="adm:moderation")
+@requires("admin")
+async def mod_entry(cb: CallbackQuery):
+    await cb.answer()
+    await list_page(cb, 0)
+
+@router.callback_query(F.data.regexp(r"^adm:mod:list:(\d+)$"))
+@requires("admin")
+async def mod_list(cb: CallbackQuery):
+    page = int(cb.data.rsplit(":",1)[1])
+    await list_page(cb, page)
+
+async def list_page(cb: CallbackQuery, page: int):
+    async with Session() as s:
+        rows, has_next = await WorksRepo(s).list_for_moderation(page)
+    if not rows:
+        await cb.message.edit_text("Пока нечего модерировать.")
+        return
+    lines = []
+    for r in rows:
+        lines.append(f"#{r['id']} • {r['course_name']} — {r['name']} • {r['author_name']} • "
+                     f"Готовая: {r['price_regular'] or '—'} | Под ключ: {r['price_key'] or '—'}\n"
+                     f"/card_{r['id']}")
+    text_out = "Модерация работ:\n\n" + "\n".join(lines)
+    await cb.message.edit_text(text_out, reply_markup=moderation_list_kb(page, page>0, has_next))
+
+@router.message(F.text.regexp(r"^/card_(\d+)$"))
+@requires("admin")
+async def show_card(msg: Message):
+    work_id = int(msg.text.split("_")[1])
+    async with Session() as s:
+        card = await WorksRepo(s).get_card(work_id)
+    txt = (f"#{card['id']} • {card['course_name']}\n"
+           f"Название: {card['name']}\n"
+           f"Статус: {card['status']}\n"
+           f"Готовая: {card['price_regular'] or '—'} | Под ключ: {card['price_key'] or '—'}\n\n"
+           f"{card['description'] or ''}")
+    await msg.answer(txt, reply_markup=work_card_kb(work_id))
+
+@router.callback_query(F.data.regexp(r"^adm:mod:card:(\d+)$"))
+@requires("admin")
+async def card_from_btn(cb: CallbackQuery):
+    wid = int(cb.data.rsplit(":",1)[1])
+    async with Session() as s:
+        card = await WorksRepo(s).get_card(wid)
+    txt = (f"#{card['id']} • {card['course_name']}\n"
+           f"Название: {card['name']}\n"
+           f"Статус: {card['status']}\n"
+           f"Готовая: {card['price_regular'] or '—'} | Под ключ: {card['price_key'] or '—'}")
+    await cb.message.edit_text(txt, reply_markup=work_card_kb(wid)); await cb.answer()
+
+# ---- Правка цен
+
+class EditPriceFSM(StatesGroup):
+    input = State()
+
+@router.callback_query(F.data.regexp(r"^adm:mod:edit_prices:(\d+)$"))
+@requires("admin")
+async def edit_prices_start(cb: CallbackQuery, state: FSMContext):
+    wid = int(cb.data.rsplit(":",1)[1])
+    await state.set_state(EditPriceFSM.input)
+    await state.update_data(work_id=wid)
+    await cb.message.edit_text("Введи цены через пробел: <готовая> <под_ключ>\nПример: `1990 4990`\n"
+                               "Если варианта нет — поставь `-`.", parse_mode="Markdown",
+                               reply_markup=save_prices_kb(wid))
+    await cb.answer()
+
+@router.message(EditPriceFSM.input)
+@requires("admin")
+async def edit_prices_save(msg: Message, state: FSMContext):
+    parts = (msg.text.split() + ["",""])[:2]
+    def parse(x): return None if x.strip()=="-" else float(x)
+    pr, pk = parse(parts[0]), parse(parts[1])
+    data = await state.get_data()
+    async with Session() as s:
+        await WorksRepo(s).update_prices(data["work_id"], pr, pk)
+    await state.clear()
+    await msg.answer("Цены обновлены. /card_{}".format(data["work_id"]))
+
+@router.callback_query(F.data.regexp(r"^adm:mod:save_prices:(\d+)$"))
+@requires("admin")
+async def save_prices_click(cb: CallbackQuery):
+    await cb.answer("Введи цены сообщением в чат — см. инструкцию выше.", show_alert=True)
+
+# ---- Апрув / реджект
+@router.callback_query(F.data.regexp(r"^adm:mod:approve:(\d+)$"))
+@requires("admin")
+async def approve_work(cb: CallbackQuery):
+    wid = int(cb.data.rsplit(":",1)[1])
+    async with Session() as s:
+        await WorksRepo(s).approve(wid)
+    await cb.message.edit_text(f"Работа #{wid} одобрена и переведена в статус READY.")
+    await cb.answer()
+
+@router.callback_query(F.data.regexp(r"^adm:mod:reject:(\d+)$"))
+@requires("admin")
+async def reject_work(cb: CallbackQuery):
+    wid = int(cb.data.rsplit(":",1)[1])
+    async with Session() as s:
+        await WorksRepo(s).reject(wid)
+    await cb.message.edit_text(f"Работа #{wid} возвращена в NOT_IN_PROGRESS.")
+    await cb.answer()
