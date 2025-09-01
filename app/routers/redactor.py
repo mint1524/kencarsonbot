@@ -5,6 +5,8 @@ from aiogram.fsm.context import FSMContext
 from app.middlewares.roles import requires
 from app.db import Session
 from sqlalchemy import text
+from app.middlewares.roles import Requires
+
 
 router = Router(name="redactor")
 
@@ -14,8 +16,7 @@ class UploadFSM(StatesGroup):
     description = State()
     prices = State()
 
-@router.callback_query(F.data=="red:upload")
-@requires("redactor")
+@router.callback_query(Requires("redactor"), F.data == "red:upload")
 async def start_upload(cb: CallbackQuery, state: FSMContext):
     await state.set_state(UploadFSM.course)
     await cb.message.edit_text("Выбери курс (введи ID курса):")
@@ -70,8 +71,7 @@ def wallet_menu():
         [InlineKeyboardButton(text="Заявки на вывод", callback_data="red:wdr:list")],
     ])
 
-@router.callback_query(F.data=="red:wallet")
-@requires("redactor")
+@router.callback_query(Requires("redactor"), F.data == "red:wallet")
 async def wallet(cb: CallbackQuery):
     from app.repositories.users import UsersRepo
     async with Session() as s:
@@ -87,9 +87,8 @@ class WithdrawFSM(StatesGroup):
     method = State()
     requisites = State()
 
-@router.callback_query(F.data=="red:wdr:start")
-@requires("redactor")
-async def wdr_start(cb: CallbackQuery, state: FSMContext):
+@router.callback_query(Requires("redactor"), F.data == "red:wallet")
+async def wallet(cb: CallbackQuery):
     await state.set_state(WithdrawFSM.amount)
     await cb.message.edit_text("Сколько вывести? (число)")
     await cb.answer()
@@ -121,8 +120,7 @@ async def wdr_finish(msg: Message, state: FSMContext):
     await state.clear()
     await msg.answer("Заявка создана. Админ проверит и подтвердит выплату.")
     
-@router.callback_query(F.data=="red:works")
-@requires("redactor")
+@router.callback_query(Requires("redactor"), F.data == "red:works")
 async def list_my_works(cb: CallbackQuery):
     async with Session() as s:
         rows = (await s.execute(text("""

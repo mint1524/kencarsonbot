@@ -4,6 +4,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 from sqlalchemy import text
+from app.middlewares.roles import Requires
 from app.db import Session
 from app.middlewares.roles import requires
 from app.repositories.roles import RolesRepo, VALID_ROLES
@@ -16,8 +17,7 @@ router = Router(name="admin_root")
 # --- подроутер «админ-команды»
 admin_cmd = Router(name="admin_cmd")
 
-@admin_cmd.message(F.text.regexp(r"^/promote (\d+) (.+)$"))
-@requires("admin")
+@admin_cmd.message(Requires("admin"), F.text.regexp(r"^/promote (\d+) (.+)$"))
 async def promote_user(msg: Message):
     tg_id, roles_str = msg.text.split(maxsplit=2)[1:]
     tg_id = int(tg_id)
@@ -34,8 +34,7 @@ async def promote_user(msg: Message):
     if added:
         await msg.answer(f"✅ Пользователь {tg_id} получил роли: {', '.join(added)}")
 
-@admin_cmd.message(F.text.regexp(r"^/demote (\d+) (.+)$"))
-@requires("admin")
+@admin_cmd.message(Requires("admin"), F.text.regexp(r"^/demote (\d+) (.+)$"))
 async def demote_user(msg: Message):
     tg_id, roles_str = msg.text.split(maxsplit=2)[1:]
     tg_id = int(tg_id)
@@ -52,8 +51,7 @@ async def demote_user(msg: Message):
     if removed:
         await msg.answer(f"❌ У пользователя {tg_id} сняты роли: {', '.join(removed)}")
 
-@admin_cmd.callback_query(F.data=="adm:users")
-@requires("admin")
+@admin_cmd.callback_query(Requires("admin"), F.data == "adm:users")
 async def list_users(cb: CallbackQuery):
     async with Session() as s:
         rows = (await s.execute(text("""
@@ -72,14 +70,12 @@ async def list_users(cb: CallbackQuery):
 # --- подроутер «модерация»
 admin_mod = Router(name="admin_mod")
 
-@admin_mod.callback_query(F.data=="adm:moderation")
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data == "adm:moderation")
 async def mod_entry(cb: CallbackQuery):
     await cb.answer()
     await list_page(cb, 0)
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:list:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:list:(\d+)$"))
 async def mod_list(cb: CallbackQuery):
     page = int(cb.data.rsplit(":",1)[1])
     await list_page(cb, page)
@@ -98,8 +94,7 @@ async def list_page(cb: CallbackQuery, page: int):
     text_out = "Модерация работ:\n\n" + "\n".join(lines)
     await cb.message.edit_text(text_out, reply_markup=moderation_list_kb(page, page>0, has_next))
 
-@admin_mod.message(F.text.regexp(r"^/card_(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.text.regexp(r"^/card_(\d+)$"))
 async def show_card(msg: Message):
     work_id = int(msg.text.split("_")[1])
     async with Session() as s:
@@ -111,8 +106,7 @@ async def show_card(msg: Message):
            f"{card['description'] or ''}")
     await msg.answer(txt, reply_markup=work_card_kb(work_id))
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:card:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:card:(\d+)$"))
 async def card_from_btn(cb: CallbackQuery):
     wid = int(cb.data.rsplit(":",1)[1])
     async with Session() as s:
@@ -126,8 +120,7 @@ async def card_from_btn(cb: CallbackQuery):
 class EditPriceFSM(StatesGroup):
     input = State()
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:edit_prices:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:edit_prices:(\d+)$"))
 async def edit_prices_start(cb: CallbackQuery, state: FSMContext):
     wid = int(cb.data.rsplit(":",1)[1])
     await state.set_state(EditPriceFSM.input)
@@ -149,13 +142,11 @@ async def edit_prices_save(msg: Message, state: FSMContext):
     await state.clear()
     await msg.answer("Цены обновлены. /card_{}".format(data["work_id"]))
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:save_prices:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:save_prices:(\d+)$"))
 async def save_prices_click(cb: CallbackQuery):
     await cb.answer("Введи цены сообщением в чат — см. инструкцию выше.", show_alert=True)
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:approve:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:approve:(\d+)$"))
 async def approve_work(cb: CallbackQuery):
     wid = int(cb.data.rsplit(":",1)[1])
     async with Session() as s:
@@ -163,8 +154,7 @@ async def approve_work(cb: CallbackQuery):
     await cb.message.edit_text(f"Работа #{wid} одобрена и переведена в статус READY.")
     await cb.answer()
 
-@admin_mod.callback_query(F.data.regexp(r"^adm:mod:reject:(\d+)$"))
-@requires("admin")
+@admin_mod.callback_query(Requires("admin"), F.data.regexp(r"^adm:mod:reject:(\d+)$"))
 async def reject_work(cb: CallbackQuery):
     wid = int(cb.data.rsplit(":",1)[1])
     async with Session() as s:

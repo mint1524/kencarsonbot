@@ -1,7 +1,7 @@
-from typing import Callable, Awaitable, Dict, Any
+from typing import Callable, Awaitable, Dict, Any, Optional, Set
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
-import functools
+from aiogram.filters import BaseFilter
 
 from app.repositories.roles import RolesRepo
 
@@ -23,21 +23,39 @@ class RoleMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
-def requires(*need: str):
-    """Декоратор для aiogram v3: НЕ ломает DI, принимает **data и пробрасывает дальше."""
-    need_set = set(need)
+# def requires(*need: str):
+#     """Декоратор для aiogram v3: НЕ ломает DI, принимает **data и пробрасывает дальше."""
+#     need_set = set(need)
 
-    def deco(func):
-        @functools.wraps(func)
-        async def wrapper(event: TelegramObject, data: Dict[str, Any]):
-            roles: set[str] = set(data.get("roles", []))
-            if not need_set.issubset(roles):
-                bot = data["bot"]
-                user = data.get("event_from_user")
-                if user:
-                    await bot.send_message(user.id, "Недостаточно прав.")
-                return
-            # важно: пробрасываем дальше ТЕМ ЖЕ контрактом (event, data)
-            return await func(event, data)
-        return wrapper
-    return deco
+#     def deco(func):
+#         @functools.wraps(func)
+#         async def wrapper(event: TelegramObject, data: Dict[str, Any]):
+#             roles: set[str] = set(data.get("roles", []))
+#             if not need_set.issubset(roles):
+#                 bot = data["bot"]
+#                 user = data.get("event_from_user")
+#                 if user:
+#                     await bot.send_message(user.id, "Недостаточно прав.")
+#                 return
+#             # важно: пробрасываем дальше ТЕМ ЖЕ контрактом (event, data)
+#             return await func(event, data)
+#         return wrapper
+#     return deco
+
+class Requires(BaseFilter):
+    def __init__(self, *need: str):
+        self.need: Set[str] = set(need)
+
+    async def __call__(
+        self,
+        event: TelegramObject,
+        roles: Optional[Set[str]] = None,
+        bot=None,
+        event_from_user=None,
+        **kwargs
+    ) -> bool:
+        roles = roles or set()
+        ok = self.need.issubset(roles)
+        if not ok and bot and event_from_user:
+            await bot.send_message(event_from_user.id, "Недостаточно прав.")
+        return ok
