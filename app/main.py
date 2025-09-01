@@ -27,8 +27,9 @@ def build_dp() -> Dispatcher:
     storage = RedisStorage(Redis.from_url(settings.REDIS_URL))
     dp = Dispatcher(storage=storage)
 
-    dp.message.middleware(RoleMiddleware(Session))
-    dp.callback_query.middleware(RoleMiddleware(Session))
+    dp.update.middleware(RoleMiddleware(Session))
+    
+    dp.update.register(log_raw_updates, Update)
 
     dp.include_router(user_router)
     dp.include_router(tgpay_router)
