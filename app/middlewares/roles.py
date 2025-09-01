@@ -1,8 +1,9 @@
 from typing import Callable, Awaitable, Dict, Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+import functools
+
 from app.repositories.roles import RolesRepo
-from functools import wraps
 
 class RoleMiddleware(BaseMiddleware):
     def __init__(self, sessionmaker):
@@ -14,29 +15,29 @@ class RoleMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ):
-        roles = {"user"}  # дефолт
         user = data.get("event_from_user")
         if user:
             async with self.Session() as s:
-                db_roles = await RolesRepo(s).get_user_roles(user.id)
-            if db_roles:
-                roles = set(db_roles)
-        data["roles"] = roles
+                roles = await RolesRepo(s).get_user_roles(user.id)
+            data["roles"] = roles or {"user"}
         return await handler(event, data)
 
+
 def requires(*need: str):
-    need = set(need)
+    """Декоратор для aiogram v3: НЕ ломает DI, принимает **data и пробрасывает дальше."""
+    need_set = set(need)
 
     def deco(func):
-        @wraps(func)
-        async def wrapper(event: TelegramObject, **data):
-            roles = set(data.get("roles", []))
-            if not need.issubset(roles):
-                bot = data.get("bot")
-                user = data.get("event_from_user") or getattr(event, "from_user", None)
-                if bot and user:
+        @functools.wraps(func)
+        async def wrapper(event: TelegramObject, data: Dict[str, Any]):
+            roles: set[str] = set(data.get("roles", []))
+            if not need_set.issubset(roles):
+                bot = data["bot"]
+                user = data.get("event_from_user")
+                if user:
                     await bot.send_message(user.id, "Недостаточно прав.")
                 return
-            return await func(event, **data)
+            # важно: пробрасываем дальше ТЕМ ЖЕ контрактом (event, data)
+            return await func(event, data)
         return wrapper
     return deco
