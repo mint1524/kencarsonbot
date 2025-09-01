@@ -120,3 +120,25 @@ async def wdr_finish(msg: Message, state: FSMContext):
         await s.commit()
     await state.clear()
     await msg.answer("Заявка создана. Админ проверит и подтвердит выплату.")
+    
+@router.callback_query(F.data=="red:works")
+@requires("redactor")
+async def list_my_works(cb: CallbackQuery):
+    from sqlalchemy import text
+    from app.db import Session
+    async with Session() as s:
+        rows = (await s.execute(text("""
+          select w.id, w.name, w.status, c.name as course_name
+          from works w
+          join courses c on c.id = w.course_id
+          where w.author = :u
+          order by w.updated_at desc limit 20
+        """), {"u": cb.from_user.id})).mappings().all()
+    if not rows:
+        await cb.message.edit_text("У тебя пока нет работ.")
+    else:
+        text_out = "Твои работы:\n\n" + "\n".join(
+            f"#{r['id']} • {r['course_name']} — {r['name']} • {r['status']}" for r in rows
+        )
+        await cb.message.edit_text(text_out)
+    await cb.answer()

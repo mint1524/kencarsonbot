@@ -10,13 +10,53 @@ from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
 
 router = Router(name="admin")
 
+@router.message(F.text.regexp(r"^/promote (\d+) (.+)$"))
+@requires("admin")
+async def promote_user(msg: Message):
+    tg_id, roles_str = msg.text.split(maxsplit=2)[1:]
+    tg_id = int(tg_id)
+    roles = [r.strip() for r in roles_str.split(",")]
+
+    async with Session() as s:
+        repo = RolesRepo(s)
+        added = []
+        for role in roles:
+            if role not in VALID_ROLES:
+                await msg.answer(f"⚠️ Роль '{role}' недопустима. Доступные: {', '.join(VALID_ROLES)}")
+                continue
+            await repo.add_role(tg_id, role)
+            added.append(role)
+
+    if added:
+        await msg.answer(f"✅ Пользователь {tg_id} получил роли: {', '.join(added)}")
+
+@router.message(F.text.regexp(r"^/demote (\d+) (.+)$"))
+@requires("admin")
+async def demote_user(msg: Message):
+    tg_id, roles_str = msg.text.split(maxsplit=2)[1:]
+    tg_id = int(tg_id)
+    roles = [r.strip() for r in roles_str.split(",")]
+
+    async with Session() as s:
+        repo = RolesRepo(s)
+        removed = []
+        for role in roles:
+            if role not in VALID_ROLES:
+                await msg.answer(f"⚠️ Роль '{role}' недопустима. Доступные: {', '.join(VALID_ROLES)}")
+                continue
+            await repo.remove_role(tg_id, role)
+            removed.append(role)
+
+    if removed:
+        await msg.answer(f"❌ У пользователя {tg_id} сняты роли: {', '.join(removed)}")
+
 @router.callback_query(F.data.startswith("adm:mk_redactor"))
 @requires("admin")
 async def make_redactor(cb: CallbackQuery, roles: set[str]):
     # ожидаем, что в data будет adm:mk_redactor:<tg_id>
     _,_,uid = cb.data.split(":")
     async with Session() as s:
-        await RolesRepo(s).grant_role(int(uid), "redactor")
+        await RolesRepo(s).add_role(int(uid), "redactor")
     await cb.answer("Пользователь повышен до редактора", show_alert=True)
 
 @router.callback_query(F.data=="adm:fin:withdrawals")
@@ -182,4 +222,22 @@ async def reject_work(cb: CallbackQuery):
     async with Session() as s:
         await WorksRepo(s).reject(wid)
     await cb.message.edit_text(f"Работа #{wid} возвращена в NOT_IN_PROGRESS.")
+    await cb.answer()
+    
+@router.callback_query(F.data=="adm:users")
+@requires("admin")
+async def list_users(cb: CallbackQuery):
+    from sqlalchemy import text
+    async with Session() as s:
+        rows = (await s.execute(text("""
+          select tg_id, username, balance
+          from users order by created_at desc limit 20
+        """))).mappings().all()
+    if not rows:
+        await cb.message.edit_text("Пользователей пока нет.")
+    else:
+        text_out = "Пользователи:\n\n" + "\n".join(
+            f"{r['tg_id']} • @{r['username']} • баланс {r['balance']}" for r in rows
+        )
+        await cb.message.edit_text(text_out)
     await cb.answer()
