@@ -2,10 +2,9 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import SkipHandler
 
 from sqlalchemy import text
-from app.middlewares.roles import Requires
+from app.middlewares.roles import Requires, MissingRole
 from app.db import Session
 from app.repositories.roles import RolesRepo, VALID_ROLES
 from app.repositories.works import WorksRepo
@@ -14,14 +13,10 @@ from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
 # --- корневой роутер
 router = Router(name="admin_root")
 
-@router.callback_query(F.data.regexp(r"^adm:"))
-async def admin_gate(cb: CallbackQuery, roles: set[str] | None = None):
-    if not roles or "admin" not in roles:
-        await cb.answer("Недостаточно прав.", show_alert=True)
-        return  # стоп, прав нет
-    # права есть — не потребляем событие, пропускаем к целевым хэндлерам
-    raise SkipHandler
-
+@router.callback_query(MissingRole("admin"), F.data.regexp(r"^adm:"))
+async def admin_gate(cb: CallbackQuery):
+    await cb.answer("Недостаточно прав.", show_alert=True)
+    return
 
 # --- подроутер «админ-команды»
 admin_cmd = Router(name="admin_cmd")
