@@ -1,5 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher
+from aiogram.types import Update
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 from loguru import logger
@@ -22,6 +23,11 @@ logger.add(lambda msg: print(msg, end=""), level="DEBUG")
 async def on_startup(bot: Bot):
     await healthcheck()
     logger.info("Bot started")
+    
+async def log_raw_updates(update: Update, bot: Bot):
+    print("=== RAW UPDATE ===")
+    print(update.model_dump_json(indent=2)[:2000])
+    print("=================")
 
 def build_dp() -> Dispatcher:
     storage = RedisStorage(Redis.from_url(settings.REDIS_URL))
