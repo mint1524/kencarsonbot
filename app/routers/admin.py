@@ -6,7 +6,6 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import text
 from app.middlewares.roles import Requires
 from app.db import Session
-from app.middlewares.roles import requires
 from app.repositories.roles import RolesRepo, VALID_ROLES
 from app.repositories.works import WorksRepo
 from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
@@ -130,8 +129,7 @@ async def edit_prices_start(cb: CallbackQuery, state: FSMContext):
                                reply_markup=save_prices_kb(wid))
     await cb.answer()
 
-@admin_mod.message(EditPriceFSM.input)
-@requires("admin")
+@admin_mod.message(Requires("admin"), EditPriceFSM.input)
 async def edit_prices_save(msg: Message, state: FSMContext):
     parts = (msg.text.split() + ["",""])[:2]
     def parse(x): return None if x.strip()=="-" else float(x)

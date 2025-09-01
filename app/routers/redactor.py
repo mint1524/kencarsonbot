@@ -2,7 +2,6 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from app.middlewares.roles import requires
 from app.db import Session
 from sqlalchemy import text
 from app.middlewares.roles import Requires
