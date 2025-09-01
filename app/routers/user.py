@@ -62,14 +62,20 @@ async def shop_page(cb: CallbackQuery, page: int):
     has_next = (off + PAGE_SIZE) < total
     kb = shop_list_kb(page, page > 0, has_next)
 
-    # 🛠 фикс "message is not modified"
+    # не дёргаем edit_text, если и так всё совпадает
     if cb.message.text == text_out and cb.message.reply_markup == kb:
         await cb.answer("Уже актуально ✅", show_alert=False)
         return
 
-    await cb.message.edit_text(text_out, reply_markup=kb)
+    try:
+        await cb.message.edit_text(text_out, reply_markup=kb)
+    except Exception as e:
+        # на всякий — отлавливаем «message is not modified»
+        if "message is not modified" in str(e).lower():
+            await cb.answer("Уже актуально ✅", show_alert=False)
+        else:
+            raise
     await cb.answer()
-
 
 @user_router.message(F.text.regexp(r"^/open_(\d+)$"))
 async def open_variant(msg: Message):

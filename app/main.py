@@ -1,6 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-from aiogram.types import Update
+from aiogram.types import Message, CallbackQuery, Update
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 from loguru import logger
@@ -32,17 +32,41 @@ async def log_raw_updates(update: Update, bot: Bot):
 def build_dp() -> Dispatcher:
     storage = RedisStorage(Redis.from_url(settings.REDIS_URL))
     dp = Dispatcher(storage=storage)
-
-    dp.update.middleware(RoleMiddleware(Session))
     
-    dp.update.register(log_raw_updates, Update)
+    # вешаем middleware ТОЛЬКО на сообщения/колбэки
+    dp.message.middleware(RoleMiddleware(Session))
+    dp.callback_query.middleware(RoleMiddleware(Session))
 
-    dp.include_router(user_router)
-    dp.include_router(tgpay_router)
-    dp.include_router(redactor_router)
-    dp.include_router(admin_router)
-    dp.include_router(common_router)
-    dp.include_router(debug_router)
+    # лог вообще всех апдейтов до роутеров (чтобы понять, приходят ли)
+    async def _raw_log(update: Update, **kwargs):
+        print("=== RAW UPDATE ===")
+        try:
+            print(update.model_dump_json(indent=2)[:2000])
+        except Exception as e:
+            print(f"(dump error: {e}) | {update}")
+        print("==================")
+    dp.update.register(_raw_log, Update)
+
+    # «ловушки» на случай, если твои роутеры не цепляют события
+    async def _catch_msg(msg: Message, **kwargs):
+        print(f"[CATCH MSG] {msg.from_user.id}: {msg.text}")
+    async def _catch_cb(cb: CallbackQuery, **kwargs):
+        print(f"[CATCH CB]  {cb.from_user.id}: {cb.data}"); await cb.answer()
+
+    dp.message.register(_catch_msg)         # без фильтров — поймает всё
+    dp.callback_query.register(_catch_cb)   # без фильтров — поймает всё
+
+
+    # dp.update.middleware(RoleMiddleware(Session))
+    
+    # dp.update.register(log_raw_updates, Update)
+
+    # dp.include_router(user_router)
+    # dp.include_router(tgpay_router)
+    # dp.include_router(redactor_router)
+    # dp.include_router(admin_router)
+    # dp.include_router(common_router)
+    # dp.include_router(debug_router)
     return dp
 
 async def main():
