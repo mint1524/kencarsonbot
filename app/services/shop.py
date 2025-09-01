@@ -165,7 +165,7 @@ class ShopService:
         """), {"p": float(amount), "st": new_status, "id": purchase_id})
 
         # начисления 70/30
-        author_share = 0.0 if buyer_id == author_id else round(float(\1) * await _author_percent(self.s), 2)
+        author_share = 0.0 if buyer_id == author_id else round(float() * await _author_percent(self.s), 2)
         platform_share = round(float(amount) - author_share, 2)
         await self.s.execute(text("update users set balance = balance + :x where tg_id=:u"),
                              {"x": author_share, "u": author_id})
