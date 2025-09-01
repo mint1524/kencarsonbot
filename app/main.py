@@ -7,6 +7,7 @@ from loguru import logger
 from app.config import settings
 from app.db import healthcheck, Session
 from app.middlewares.roles import RoleMiddleware
+from app.routers.debug import debug_router
 from app.routers import (
     common_router,
     redactor_router,
@@ -33,6 +34,7 @@ def build_dp() -> Dispatcher:
     dp.include_router(redactor_router)
     dp.include_router(admin_router)
     dp.include_router(common_router)
+    dp.include_router(debug_router)
     return dp
 
 async def main():
