@@ -3,6 +3,8 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from app.middlewares.roles import requires
+from app.db import Session
+from sqlalchemy import text
 
 router = Router(name="redactor")
 
@@ -45,8 +47,6 @@ async def set_prices(msg: Message, state: FSMContext):
     data = await state.get_data()
 
     # вставка в БД
-    from sqlalchemy import text
-    from app.db import Session
     async with Session() as s:
         q = text("""
             insert into works(course_id, name, description, status, author)
@@ -124,8 +124,6 @@ async def wdr_finish(msg: Message, state: FSMContext):
 @router.callback_query(F.data=="red:works")
 @requires("redactor")
 async def list_my_works(cb: CallbackQuery):
-    from sqlalchemy import text
-    from app.db import Session
     async with Session() as s:
         rows = (await s.execute(text("""
           select w.id, w.name, w.status, c.name as course_name
