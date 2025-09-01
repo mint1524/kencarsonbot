@@ -15,6 +15,9 @@ from app.routers import (
     tgpay_router,
 )
 
+logger.remove()
+logger.add(lambda msg: print(msg, end=""), level="DEBUG")
+
 async def on_startup(bot: Bot):
     await healthcheck()
     logger.info("Bot started")
