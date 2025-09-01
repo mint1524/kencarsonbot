@@ -5,7 +5,12 @@ from app.keyboards.shop import shop_list_kb, variant_buy_kb
 from app.db import Session
 from app.services.shop import ShopService
 from app.config import settings
-from app.keyboards.nav import back_to_menu_kb, with_back
+\1
+from sqlalchemy import text as _text
+async def _author_percent_session(s):
+    row = (await s.execute(_text("select value from settings where key='platform_commission_percent'"))).first()
+    pct = int(row[0]) if row else 30
+    return (100 - pct) / 100
 
 # --------- РОУТЕР ДЛЯ ПОКУПАТЕЛЯ (витрина, crypto) ----------
 user_router = Router(name="user")
@@ -57,24 +62,11 @@ async def shop_page(cb: CallbackQuery, page: int):
         lines.append(
             f"#{r['id']} • {r['course_name']} — {r['name']}  "
             f"[Готовая: {r['price_regular'] or '—'} | Под ключ: {r['price_key'] or '—'}]\n"
+            f"/open_{r['variant_id']}"
         )
     text_out = "Доступные работы:\n\n" + "\n".join(lines)
     has_next = (off + PAGE_SIZE) < total
-    kb = shop_list_kb(page, page > 0, has_next)
-
-    # не дёргаем edit_text, если и так всё совпадает
-    if cb.message.text == text_out and cb.message.reply_markup == kb:
-        await cb.answer("Уже актуально ✅", show_alert=False)
-        return
-
-    try:
-        await cb.message.edit_text(text_out, reply_markup=kb)
-    except Exception as e:
-        # на всякий — отлавливаем «message is not modified»
-        if "message is not modified" in str(e).lower():
-            await cb.answer("Уже актуально ✅", show_alert=False)
-        else:
-            raise
+    await cb.message.edit_text(text_out, reply_markup=shop_list_kb(page, page>0, has_next))
     await cb.answer()
 
 @user_router.message(F.text.regexp(r"^/open_(\d+)$"))
@@ -197,7 +189,7 @@ async def on_success_payment(msg: Message, bot):
         """), {"p": amount_rub, "st": new_status, "id": purchase_id})
 
         # 70/30
-        author_share = 0.0 if buyer_id == author_id else round(float(amount_rub) * 0.70, 2)
+        author_share = 0.0 if buyer_id == author_id else round(float(amount_rub) * await _author_percent_session(s), 2)
         platform_share = round(float(amount_rub) - author_share, 2)
         await s.execute(text("update users set balance = balance + :x where tg_id=:u"),
                         {"x": author_share, "u": author_id})

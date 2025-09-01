@@ -1,12 +1,7 @@
-from .common import router as common_router
+from . import common
 from .user import user_router, tgpay_router
-from .redactor import router as redactor_router
-from .admin import router as admin_router
+from . import redactor
+from . import admin
 
-__all__ = [
-    "common_router",
-    "user_router",
-    "tgpay_router",
-    "redactor_router",
-    "admin_router",
-]
+# чтобы main.py мог импортировать:
+router = common.router  # не используется, но оставим для совместимости

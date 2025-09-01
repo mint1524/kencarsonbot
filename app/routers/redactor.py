@@ -2,109 +2,52 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import text
-
-from app.middlewares.roles import Requires, MissingRole
-from app.db import Session
-from app.keyboards.nav import back_to_menu_kb, cancel_kb
-from app.keyboards.menu import main_menu
+from app.middlewares.roles import requires
 
 router = Router(name="redactor")
 
-# ---------- FSM загрузки работы ----------
 class UploadFSM(StatesGroup):
     course = State()
     name = State()
     description = State()
     prices = State()
 
-# Гейт на «нет прав» (чтобы не спамило по 10 раз)
-@router.callback_query(MissingRole("redactor"), F.data.regexp(r"^red:"))
-async def red_gate(cb: CallbackQuery):
-    await cb.answer("Недостаточно прав.", show_alert=True)
-
-@router.callback_query(Requires("redactor"), F.data == "red:upload")
+@router.callback_query(F.data=="red:upload")
+@requires("redactor")
 async def start_upload(cb: CallbackQuery, state: FSMContext):
     await state.set_state(UploadFSM.course)
-    await cb.message.edit_text(
-        "Выбери курс (введи **ID курса**). Например: `1`",
-        parse_mode="Markdown",
-        reply_markup=cancel_kb()
-    )
+    await cb.message.edit_text("Выбери курс (введи ID курса):")
     await cb.answer()
 
 @router.message(UploadFSM.course)
 async def set_course(msg: Message, state: FSMContext):
-    txt = (msg.text or "").strip()
-    if not txt.isdigit():
-        return await msg.answer("Нужно число (ID курса). Попробуй ещё раз.\nНапример: `1`",
-                                parse_mode="Markdown", reply_markup=cancel_kb())
-    course_id = int(txt)
-    # проверим, что курс существует
-    async with Session() as s:
-        exists = (await s.execute(text("select 1 from courses where id=:c"), {"c": course_id})).first()
-    if not exists:
-        return await msg.answer(f"Курс с ID `{course_id}` не найден. Введи существующий ID.",
-                                parse_mode="Markdown", reply_markup=cancel_kb())
-
-    await state.update_data(course_id=course_id)
+    await state.update_data(course_id=int(msg.text))
     await state.set_state(UploadFSM.name)
-    await msg.answer("Введи **название** работы:", parse_mode="Markdown", reply_markup=cancel_kb())
+    await msg.answer("Введи название работы:")
 
 @router.message(UploadFSM.name)
 async def set_name(msg: Message, state: FSMContext):
-    name = (msg.text or "").strip()
-    if not name:
-        return await msg.answer("Название не может быть пустым. Введи ещё раз.", reply_markup=cancel_kb())
-    await state.update_data(name=name)
+    await state.update_data(name=msg.text)
     await state.set_state(UploadFSM.description)
-    await msg.answer("Опиши работу (кратко):", reply_markup=cancel_kb())
+    await msg.answer("Опиши работу (кратко):")
 
 @router.message(UploadFSM.description)
 async def set_desc(msg: Message, state: FSMContext):
-    desc = (msg.text or "").strip()
-    await state.update_data(description=desc)
+    await state.update_data(description=msg.text)
     await state.set_state(UploadFSM.prices)
-    await msg.answer(
-        "Введи цены через пробел: `<готовая> <под_ключ>`.\n"
-        "Если варианта нет — поставь `-`.\n"
-        "Примеры:\n"
-        "• `1990 4990`\n"
-        "• `- 4990`\n"
-        "• `1990 -`",
-        parse_mode="Markdown",
-        reply_markup=cancel_kb()
-    )
-
-def _parse_price(token: str | None):
-    token = (token or "").strip()
-    if token in {"", "-"}:
-        return None
-    try:
-        return float(token.replace(",", "."))
-    except ValueError:
-        return "bad"  # маркер невалидного ввода
+    await msg.answer("Введи цены через пробел: <готовая> <под_ключ>, либо '-' если нет варианта.")
 
 @router.message(UploadFSM.prices)
 async def set_prices(msg: Message, state: FSMContext):
-    parts = (msg.text or "").split()
-    ready_s = parts[0] if len(parts) > 0 else ""
-    key_s   = parts[1] if len(parts) > 1 else ""
-
-    price_ready = _parse_price(ready_s)
-    price_key   = _parse_price(key_s)
-    if price_ready == "bad" or price_key == "bad":
-        return await msg.answer("Неверный формат. Пример: `1990 4990` или `- 4990`.",
-                                parse_mode="Markdown", reply_markup=cancel_kb())
-
+    ready_s, key_s = (msg.text.split() + ["", ""])[:2]
+    price_ready = None if ready_s=="-" else float(ready_s)
+    price_key   = None if key_s=="-" else float(key_s)
     data = await state.get_data()
-    async with Session() as s:
-        # ещё раз проверим, что курс существует
-        exists = (await s.execute(text("select 1 from courses where id=:c"), {"c": data["course_id"]})).first()
-        if not exists:
-            return await msg.answer(f"Курс с ID `{data['course_id']}` не найден. Введите корректный ID.",
-                                    parse_mode="Markdown", reply_markup=cancel_kb())
 
+    # вставка в БД
+    from sqlalchemy import text
+    from app.db import Session
+    async with Session() as s:
         q = text("""
             insert into works(course_id, name, description, status, author)
             values (:c,:n,:d,'not_in_progress',:a) returning id
@@ -119,20 +62,16 @@ async def set_prices(msg: Message, state: FSMContext):
         await s.commit()
 
     await state.clear()
-    await msg.answer(
-        f"✅ Работа добавлена (ID: {wid}). Отправлена на модерацию/установку цен админом при необходимости.",
-        reply_markup=back_to_menu_kb()
-    )
+    await msg.answer(f"Работа добавлена (ID: {wid}). Отправлена на модерацию/установку цен админом при необходимости.")
 
 def wallet_menu():
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Вывести средства", callback_data="red:wdr:start")],
         [InlineKeyboardButton(text="Заявки на вывод", callback_data="red:wdr:list")],
-        [InlineKeyboardButton(text="🔙 В меню", callback_data="menu:main")],
     ])
 
-@router.callback_query(Requires("redactor"), F.data=="red:wallet")
+@router.callback_query(F.data=="red:wallet")
+@requires("redactor")
 async def wallet(cb: CallbackQuery):
     from app.repositories.users import UsersRepo
     async with Session() as s:
@@ -140,65 +79,44 @@ async def wallet(cb: CallbackQuery):
     await cb.message.edit_text(f"Баланс: {bal:.2f}", reply_markup=wallet_menu())
     await cb.answer()
 
-# ====== Вывод средств (упрощённо) ======
+# ===== Заявка на вывод (упрощённо) =====
+from aiogram.fsm.state import StatesGroup, State
+
 class WithdrawFSM(StatesGroup):
     amount = State()
     method = State()
     requisites = State()
 
-@router.callback_query(Requires("redactor"), F.data=="red:wdr:start")
+@router.callback_query(F.data=="red:wdr:start")
+@requires("redactor")
 async def wdr_start(cb: CallbackQuery, state: FSMContext):
     await state.set_state(WithdrawFSM.amount)
-    await cb.message.edit_text("Сколько вывести? (число)", reply_markup=cancel_kb())
+    await cb.message.edit_text("Сколько вывести? (число)")
     await cb.answer()
 
 @router.message(WithdrawFSM.amount)
 async def wdr_amount(msg: Message, state: FSMContext):
-    try:
-        amt = float((msg.text or "").replace(",", "."))
-    except ValueError:
-        return await msg.answer("Нужно число, попробуй ещё раз.", reply_markup=cancel_kb())
+    amt = float(msg.text)
     await state.update_data(amount=amt)
     await state.set_state(WithdrawFSM.method)
-    await msg.answer("Метод: `cryptobot` / `sbp` / `manual`", parse_mode="Markdown", reply_markup=cancel_kb())
+    await msg.answer("Метод: cryptobot / sbp / manual")
 
 @router.message(WithdrawFSM.method)
 async def wdr_method(msg: Message, state: FSMContext):
-    m = (msg.text or "").strip().lower()
-    if m not in {"cryptobot", "sbp", "manual"}:
-        return await msg.answer("Метод должен быть: `cryptobot` / `sbp` / `manual`.",
-                                parse_mode="Markdown", reply_markup=cancel_kb())
+    m = msg.text.strip()
     await state.update_data(method=m)
     await state.set_state(WithdrawFSM.requisites)
-    await msg.answer("Реквизиты (TON-кошелёк / телефон СБП / комментарий):", reply_markup=cancel_kb())
+    await msg.answer("Реквизиты (TON-кошелёк / телефон СБП / комментарий):")
 
 @router.message(WithdrawFSM.requisites)
 async def wdr_finish(msg: Message, state: FSMContext):
     data = await state.get_data()
     async with Session() as s:
+        from sqlalchemy import text
         await s.execute(text("""
         insert into withdrawals(user_id, amount, method, requisites, status)
         values (:u, :a, :m, :r::jsonb, 'requested')
         """), {"u": msg.from_user.id, "a": data["amount"], "m": data["method"], "r": {"value": msg.text}})
         await s.commit()
     await state.clear()
-    await msg.answer("✅ Заявка создана. Админ проверит и подтвердит выплату.", reply_markup=back_to_menu_kb())
-
-@router.callback_query(Requires("redactor"), F.data=="red:works")
-async def list_my_works(cb: CallbackQuery):
-    async with Session() as s:
-        rows = (await s.execute(text("""
-          select w.id, w.name, w.status, c.name as course_name
-          from works w
-          join courses c on c.id = w.course_id
-          where w.author = :u
-          order by w.updated_at desc limit 20
-        """), {"u": cb.from_user.id})).mappings().all()
-    if not rows:
-        await cb.message.edit_text("У тебя пока нет работ.", reply_markup=back_to_menu_kb())
-    else:
-        text_out = "Твои работы:\n\n" + "\n".join(
-            f"#{r['id']} • {r['course_name']} — {r['name']} • {r['status']}" for r in rows
-        )
-        await cb.message.edit_text(text_out, reply_markup=back_to_menu_kb())
-    await cb.answer()
+    await msg.answer("Заявка создана. Админ проверит и подтвердит выплату.")

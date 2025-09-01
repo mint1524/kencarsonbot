@@ -21,17 +21,6 @@ async def back_to_menu(cb: CallbackQuery, roles: set[str]):
     await cb.message.edit_text("Главное меню:", reply_markup=main_menu(roles))
     await cb.answer()
 
-router = Router(name="common_cancel")
-
-@router.callback_query(F.data=="fsm:cancel")
-async def cancel_fsm(cb: CallbackQuery, state: FSMContext, roles: set[str] | None = None):
-    await state.clear()
-    await cb.message.edit_text(
-        "❌ Действие отменено. Главное меню:",
-        reply_markup=main_menu(roles or {"user"})
-    )
-    await cb.answer()
-    
 # @router.callback_query()
 # async def cb_debug(cb: CallbackQuery):
     # если сюда попали — значит роутеры и диспетчер работают, но конкретный фильтр не совпал
