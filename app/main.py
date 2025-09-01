@@ -7,8 +7,13 @@ from loguru import logger
 from app.config import settings
 from app.db import healthcheck, Session
 from app.middlewares.roles import RoleMiddleware
-from app.routers import common, redactor, admin
-from app.routers.user import user_router, tgpay_router
+from app.routers import (
+    common_router,
+    redactor_router,
+    admin_router,
+    user_router,
+    tgpay_router,
+)
 
 async def on_startup(bot: Bot):
     await healthcheck()
@@ -22,9 +27,9 @@ def build_dp() -> Dispatcher:
 
     dp.include_router(user_router)
     dp.include_router(tgpay_router)
-    dp.include_router(redactor.router)
-    dp.include_router(admin.router)
-    dp.include_router(common.router)
+    dp.include_router(redactor_router)
+    dp.include_router(admin_router)
+    dp.include_router(common_router)
     return dp
 
 async def main():
