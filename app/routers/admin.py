@@ -9,6 +9,7 @@ from app.db import Session
 from app.repositories.roles import RolesRepo, VALID_ROLES
 from app.repositories.works import WorksRepo
 from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
+from app.keyboards.nav import back_to_menu_kb
 
 # --- корневой роутер
 router = Router(name="admin_root")
@@ -63,12 +64,12 @@ async def list_users(cb: CallbackQuery):
             from users order by created_at desc limit 20
         """))).mappings().all()
     if not rows:
-        await cb.message.edit_text("Пользователей пока нет.")
+        await cb.message.edit_text("Пользователей пока нет.", reply_markup=back_to_menu_kb())
     else:
         text_out = "Пользователи:\n\n" + "\n".join(
             f"{r['tg_id']} • @{r['username']} • баланс {r['balance']}" for r in rows
         )
-        await cb.message.edit_text(text_out)
+        await cb.message.edit_text(text_out, reply_markup=back_to_menu_kb())
     await cb.answer()
 
 # --- подроутер «модерация»
