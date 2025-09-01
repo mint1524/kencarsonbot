@@ -5,15 +5,19 @@ from aiogram.fsm.context import FSMContext
 from app.db import Session
 from sqlalchemy import text
 from app.middlewares.roles import Requires
+from aiogram.exceptions import SkipHandler
 
 
 router = Router(name="redactor")
 
-@router.callback_query(F.data.startswith("red:"))
-async def red_gate(cb: CallbackQuery, roles: set[str] | None = None):
+@router.callback_query(F.data.regexp(r"^red:"))
+async def admin_gate(cb: CallbackQuery, roles: set[str] | None = None):
     if not roles or "redactor" not in roles:
         await cb.answer("Недостаточно прав.", show_alert=True)
-        return
+        return  # стоп, прав нет
+    # права есть — не потребляем событие, пропускаем к целевым хэндлерам
+    raise SkipHandler
+
 
 class UploadFSM(StatesGroup):
     course = State()
