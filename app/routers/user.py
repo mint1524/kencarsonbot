@@ -5,7 +5,6 @@ from app.keyboards.shop import shop_list_kb, variant_buy_kb
 from app.db import Session
 from app.services.shop import ShopService
 from app.config import settings
-\1
 from sqlalchemy import text as _text
 async def _author_percent_session(s):
     row = (await s.execute(_text("select value from settings where key='platform_commission_percent'"))).first()
