@@ -59,7 +59,7 @@ def build_dp() -> Dispatcher:
     dp.message.middleware(RoleMiddleware(Session))
     dp.callback_query.middleware(RoleMiddleware(Session))
 
-    dp.update.register(log_raw_updates, Update)
+    # dp.update.register(log_raw_updates, Update)
 
     dp.include_router(user_router)
     dp.include_router(tgpay_router)
