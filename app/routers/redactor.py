@@ -9,6 +9,12 @@ from app.middlewares.roles import Requires
 
 router = Router(name="redactor")
 
+@router.callback_query(F.data.startswith("red:"))
+async def red_gate(cb: CallbackQuery, roles: set[str] | None = None):
+    if not roles or "redactor" not in roles:
+        await cb.answer("Недостаточно прав.", show_alert=True)
+        return
+
 class UploadFSM(StatesGroup):
     course = State()
     name = State()

@@ -43,6 +43,8 @@ class RoleMiddleware(BaseMiddleware):
 #     return deco
 
 class Requires(BaseFilter):
+    """Тихий фильтр ролей: возвращает True/False, без сообщений пользователю.
+       Если roles ещё не проставлены мидлварью, подгружает их как запасной вариант."""
     def __init__(self, *need: str):
         self.need: Set[str] = set(need)
 
@@ -50,12 +52,14 @@ class Requires(BaseFilter):
         self,
         event: TelegramObject,
         roles: Optional[Set[str]] = None,
-        bot=None,
         event_from_user=None,
-        **kwargs
+        bot=None,
+        **_
     ) -> bool:
+        if roles is None and event_from_user is not None:
+            # запасной план: получить роли напрямую (на случай если мидлварь не сработала)
+            from app.db import Session  # локальный импорт, чтобы не плодить циклы
+            async with Session() as s:
+                roles = await RolesRepo(s).get_user_roles(event_from_user.id)
         roles = roles or set()
-        ok = self.need.issubset(roles)
-        if not ok and bot and event_from_user:
-            await bot.send_message(event_from_user.id, "Недостаточно прав.")
-        return ok
+        return self.need.issubset(roles)

@@ -13,6 +13,12 @@ from app.keyboards.admin import moderation_list_kb, work_card_kb, save_prices_kb
 # --- корневой роутер
 router = Router(name="admin_root")
 
+@router.callback_query(F.data.startswith("adm:"))
+async def admin_gate(cb: CallbackQuery, roles: set[str] | None = None):
+    if not roles or "admin" not in roles:
+        await cb.answer("Недостаточно прав.", show_alert=True)
+        return
+
 # --- подроутер «админ-команды»
 admin_cmd = Router(name="admin_cmd")
 
