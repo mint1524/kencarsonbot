@@ -3,7 +3,6 @@ from sqlalchemy import text
 from aiogram import Bot
 from app.config import settings
 from app.services.payments import CryptoPay
-\1
 from sqlalchemy import text as _text
 async def _author_percent(session):
     row = (await session.execute(_text("select value from settings where key='platform_commission_percent'"))).first()
